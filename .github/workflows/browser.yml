@@ -1,0 +1,41 @@
+name: Privacy RPC browser E2E
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  browser-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Read executor revision from submodule
+        id: executor
+        run: echo "revision=$(git rev-parse HEAD:vendor/aurora-evm)" >> "$GITHUB_OUTPUT"
+      - name: Check out pinned private executor
+        uses: actions/checkout@v4
+        with:
+          repository: ilblackdragon/aurora-evm
+          ref: ${{ steps.executor.outputs.revision }}
+          path: vendor/aurora-evm
+          ssh-key: ${{ secrets.AURORA_EVM_DEPLOY_KEY }}
+          persist-credentials: false
+      - name: Verify executor matches submodule pin
+        run: test "$(git rev-parse HEAD:vendor/aurora-evm)" = "$(git -C vendor/aurora-evm rev-parse HEAD)"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Format
+        run: cargo fmt -- --check
+      - name: Lint
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Install browser test dependencies
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Test two users and two apps against actual RPC and EVM
+        run: npm test
